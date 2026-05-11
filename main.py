@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 pickle-ride | PyTorch Pickle RCE Demo
-Author: Aryan Giri
+Author: Aryan Giri | giriaryan694-a11y
 Educational Purpose Only — Demonstrates why weights_only=True is important
 """
 
@@ -19,7 +19,7 @@ def print_banner():
     print(colored(banner, 'red'))
     print(colored("=" * 60, 'cyan'))
     print(colored("📚 PyTorch Pickle RCE Demo | Educational Purpose Only", 'yellow'))
-    print(colored("👤 Made by Aryan Giri", 'green'))
+    print(colored("👤 Made by Aryan Giri | giriaryan694-a11y", 'green'))
     print(colored("⚠️  Demonstrates why you should use weights_only=True", 'red'))
     print(colored("=" * 60, 'cyan'))
     print()
